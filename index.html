@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Funghi AR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+<style>
+  :root {
+    --sky: #5c94fc;
+    --red: #e52521;
+    --green: #27a844;
+    --gold: #fbd000;
+    --ink: #1b1b1b;
+    --cream: #fff4dc;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--sky); color: var(--ink); overflow: hidden;
+    font-family: -apple-system, system-ui, sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .pixel { font-family: 'Press Start 2P', monospace; }
+
+  /* ---------- menu ---------- */
+  #menu { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    padding: calc(env(safe-area-inset-top) + 28px) 16px calc(env(safe-area-inset-bottom) + 20px);
+    overflow-y: auto; touch-action: pan-y; gap: 18px; }
+  #menu::after { content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: 44px; z-index: -1;
+    background: repeating-linear-gradient(90deg, #c84c0c 0 30px, #a33c08 30px 32px); border-top: 4px solid #1b1b1b; }
+  h1 { font-size: 22px; line-height: 1.5; color: #fff; text-align: center; margin: 6px 0 0;
+    text-shadow: 3px 3px 0 var(--ink); }
+  .sub { color: #fff; text-align: center; font-size: 15px; max-width: 360px; margin: 0; opacity: .95; }
+  .logo { width: 96px; height: 96px; image-rendering: pixelated; }
+  .card { width: 100%; max-width: 380px; background: var(--cream); border: 4px solid var(--ink);
+    box-shadow: 6px 6px 0 var(--ink); padding: 16px; }
+  .card h2 { font-size: 12px; line-height: 1.6; margin: 0 0 8px; }
+  .card p { margin: 0 0 14px; font-size: 14px; line-height: 1.45; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 56px;
+    border: 4px solid var(--ink); background: var(--gold); color: var(--ink); font-size: 12px;
+    box-shadow: 0 5px 0 #b38f00; cursor: pointer; text-decoration: none; padding: 8px 12px; }
+  .btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #b38f00; }
+  .btn.red { background: var(--red); color: #fff; box-shadow: 0 5px 0 #8e1210; }
+  .btn img { width: 36px; height: 36px; image-rendering: pixelated; }
+  .note { font-size: 12px; color: #444; margin-top: 10px; }
+  #qlStatus { font-size: 12px; margin-top: 8px; color: #555; }
+
+  /* ---------- game ---------- */
+  #game { position: fixed; inset: 0; display: none; background: #000; }
+  #game.on { display: block; }
+  #cam { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hud { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; align-items: center;
+    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px; color: #fff; font-size: 13px;
+    text-shadow: 2px 2px 0 #000; pointer-events: none; }
+  .hud .count { display: flex; align-items: center; gap: 8px; }
+  .hud img { width: 26px; height: 26px; image-rendering: pixelated; }
+  #quit { position: absolute; right: 14px; bottom: calc(env(safe-area-inset-bottom) + 16px); pointer-events: auto;
+    background: rgba(0,0,0,.55); color: #fff; border: 3px solid #fff; font-size: 10px; padding: 10px 12px; }
+  #hint { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 70px); transform: translateX(-50%);
+    color: #fff; font-size: 10px; text-shadow: 2px 2px 0 #000; text-align: center; width: 90%; line-height: 1.7;
+    pointer-events: none; transition: opacity .4s; }
+  #arrow { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; display: none; }
+  #arrow div { position: absolute; left: -22px; top: -110px; width: 44px; height: 44px; }
+  #arrow svg { width: 44px; height: 44px; filter: drop-shadow(2px 2px 0 #000); animation: nudge .7s infinite alternate; }
+  @keyframes nudge { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+  .pop { position: absolute; color: #fff; font-size: 16px; text-shadow: 2px 2px 0 #000; pointer-events: none;
+    animation: pop .9s ease-out forwards; }
+  .pop.one { color: #7dff8a; }
+  @keyframes pop { from { transform: translate(-50%, -50%) scale(.6); opacity: 1; }
+    to { transform: translate(-50%, -160%) scale(1.2); opacity: 0; } }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .25s; }
+
+  #win { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; background: rgba(0,0,0,.78); color: #fff; text-align: center; padding: 16px; }
+  #win.on { display: flex; }
+  #win h2 { font-size: 16px; line-height: 1.7; margin: 0; color: var(--gold); text-shadow: 3px 3px 0 #000; }
+  #win p { font-size: 11px; line-height: 1.9; margin: 0; max-width: 340px; }
+  #win .btn { max-width: 300px; }
+  #err { color: #fff; background: var(--red); border: 4px solid var(--ink); padding: 12px; font-size: 14px;
+    max-width: 380px; display: none; }
+</style>
+</head>
+<body>
+
+<a id="qlLink" rel="ar" href="#" style="display:none"><img alt=""></a>
+
+<section id="menu">
+  <img class="logo" id="logo" alt="">
+  <h1 class="pixel">FUNGHI AR</h1>
+  <p class="sub">Prova in casa. Due modalità: AR vera sul pavimento, oppure caccia con la fotocamera.</p>
+
+  <div class="card">
+    <h2 class="pixel">1 · FUNGHI SUL PAVIMENTO</h2>
+    <p>AR vera di iPhone. Inquadra il pavimento: tre funghi 3D si appoggiano per terra. Puoi girarci intorno e avvicinarti.</p>
+    <a class="btn pixel" id="qlBtn" rel="ar" href="#"><img id="qlImg" alt="">APRI IN AR</a>
+    <div id="qlStatus">Preparo il modello 3D…</div>
+  </div>
+
+  <div class="card">
+    <h2 class="pixel">2 · CACCIA AI FUNGHI</h2>
+    <p>Si apre la fotocamera. Ruota su te stesso, trova i funghi intorno a te e toccali per raccoglierli. La freccia ti indica dove guardare.</p>
+    <button class="btn red pixel" id="startBtn">INIZIA CACCIA</button>
+    <div class="note">Safari chiede due permessi: fotocamera e movimento. Accetta entrambi.</div>
+  </div>
+  <div id="err"></div>
+</section>
+
+<section id="game">
+  <video id="cam" playsinline muted autoplay></video>
+  <canvas id="gl"></canvas>
+  <div class="hud pixel">
+    <div class="count"><img id="hudIcon" alt=""><span id="score">0/6</span></div>
+    <div id="timer">0:00</div>
+  </div>
+  <div id="arrow"><div><svg viewBox="0 0 10 10" shape-rendering="crispEdges">
+    <path fill="#fbd000" stroke="#000" stroke-width=".6" d="M5 .6 9.4 5.4H6.6V9.4H3.4V5.4H.6Z"/></svg></div></div>
+  <div id="hint" class="pixel">Gira su te stesso<br>e cerca i funghi</div>
+  <div id="flash"></div>
+  <button id="quit" class="pixel">ESCI</button>
+  <div id="win">
+    <h2 class="pixel">TUTTI I FUNGHI<br>TROVATI!</h2>
+    <p class="pixel" id="winTime"></p>
+    <p class="pixel">Grazie Mario!<br>Ma la tua principessa<br>è in un altro castello...</p>
+    <button class="btn pixel" id="againBtn">RIGIOCA</button>
+    <button class="btn red pixel" id="menuBtn">MENU</button>
+  </div>
+</section>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { USDZExporter } from 'three/addons/exporters/USDZExporter.js';
+
+/* ---------- pixel-art icon ---------- */
+const PIX = {
+  red: ['....KKKK....','..KKRRWWKK..','.KRRRRWWWRK.','.KWWRRRRRRK.','KWWWRRRRWWRK','KWWRRRRRWWWK',
+        'KRRRRRRRRRRK','.KKCCCCCCKK.','..KCKCCKCK..','..KCKCCKCK..','..KCCCCCCK..','...KKKKKK...'],
+};
+function pixelIcon(capColor) {
+  const col = { K: '#1b1b1b', R: capColor, W: '#ffffff', C: '#f6dfb0' };
+  let rects = '';
+  PIX.red.forEach((row, y) => [...row].forEach((c, x) => {
+    if (col[c]) rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${col[c]}"/>`;
+  }));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" shape-rendering="crispEdges">${rects}</svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+const ICON_RED = pixelIcon('#e52521');
+for (const id of ['logo', 'qlImg', 'hudIcon']) document.getElementById(id).src = ICON_RED;
+document.querySelector('#qlLink img').src = ICON_RED;
+
+/* ---------- 3D mushroom ---------- */
+const CAP = { red: 0xe52521, green: 0x27a844 };
+function makeMushroom(kind = 'red') {
+  const g = new THREE.Group();
+  const std = (color, rough = 0.55) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0 });
+
+  // stem: barrel shape via lathe
+  const stemPts = [];
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10;
+    stemPts.push(new THREE.Vector2(0.085 + Math.sin(t * Math.PI) * 0.025, t * 0.17));
+  }
+  stemPts.unshift(new THREE.Vector2(0, 0));
+  const stem = new THREE.Mesh(new THREE.LatheGeometry(stemPts, 32), std(0xf6dfb0));
+  g.add(stem);
+
+  // eyes
+  const eyeMat = std(0x111111, 0.3);
+  for (const x of [-0.035, 0.035]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 16, 12), eyeMat);
+    eye.scale.set(0.6, 1.5, 0.5);
+    eye.position.set(x, 0.095, 0.102);
+    g.add(eye);
+  }
+
+  // cap: squashed dome + underside
+  const R = 0.2, SY = 0.78, baseY = 0.15;
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(R, 40, 20, 0, Math.PI * 2, 0, Math.PI / 2), std(CAP[kind], 0.45));
+  cap.scale.y = SY;
+  cap.position.y = baseY;
+  g.add(cap);
+  const under = new THREE.Mesh(new THREE.CircleGeometry(R, 40), std(0xe8cfa0));
+  under.rotation.x = Math.PI / 2;
+  under.position.y = baseY + 0.001;
+  g.add(under);
+
+  // white spots on the dome
+  const spotMat = std(0xffffff, 0.5);
+  const spots = [[0, 0, 0.075], [52, 0, 0.06], [52, 72, 0.055], [52, 144, 0.06], [52, 216, 0.055], [52, 288, 0.06]];
+  for (const [theta, phi, r] of spots) {
+    const th = THREE.MathUtils.degToRad(theta), ph = THREE.MathUtils.degToRad(phi + 20);
+    const p = new THREE.Vector3(R * Math.sin(th) * Math.sin(ph), R * SY * Math.cos(th), R * Math.sin(th) * Math.cos(ph));
+    const n = new THREE.Vector3(p.x / (R * R), p.y / (R * SY * R * SY), p.z / (R * R)).normalize();
+    const spot = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 10), spotMat);
+    spot.scale.set(1, 1, 0.28);
+    spot.position.copy(p).addScaledVector(n, -0.004);
+    spot.position.y += baseY;
+    spot.lookAt(spot.position.clone().add(n));
+    g.add(spot);
+  }
+  return g;
+}
+
+/* ---------- mode 1: AR Quick Look (USDZ) ---------- */
+const qlBtn = document.getElementById('qlBtn');
+const qlStatus = document.getElementById('qlStatus');
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const supportsQL = document.createElement('a').relList.supports('ar');
+
+(async () => {
+  try {
+    const s = new THREE.Scene();
+    const layout = [['red', -0.42, 0.05, 1.0, 20], ['green', 0.0, -0.3, 0.8, -15], ['red', 0.45, 0.1, 1.2, 40]];
+    for (const [kind, x, z, sc, rot] of layout) {
+      const m = makeMushroom(kind);
+      m.position.set(x, 0, z);
+      m.scale.setScalar(sc);
+      m.rotation.y = THREE.MathUtils.degToRad(rot);
+      s.add(m);
+    }
+    const arr = await new USDZExporter().parseAsync(s, { quickLookCompatible: true });
+    const url = URL.createObjectURL(new Blob([arr], { type: 'model/vnd.usdz+zip' }));
+    qlBtn.href = url;
+    qlStatus.textContent = supportsQL ? 'Pronto. Tocca il pulsante.'
+      : isIOS ? 'Pronto. Aprilo da Safari se non parte.' : 'Funziona solo su iPhone/iPad (Safari).';
+  } catch (e) {
+    qlStatus.textContent = 'Errore modello 3D: ' + e.message;
+  }
+})();
+
+/* ---------- mode 2: camera hunt ---------- */
+const $ = (id) => document.getElementById(id);
+const menu = $('menu'), game = $('game'), video = $('cam'), canvas = $('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 50);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x886644, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.8);
+sun.position.set(1, 3, 2);
+scene.add(sun);
+const world = new THREE.Group();
+scene.add(world);
+
+const TOTAL = 6;
+let targets = [], found = 0, startTime = 0, running = false, headingSet = false, lastFrame = 0;
+
+function spawn() {
+  for (const t of targets) world.remove(t.obj);
+  targets = [];
+  found = 0;
+  const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+  for (let i = 0; i < TOTAL; i++) {
+    // first mushroom slightly right of start view, others spread around 360°
+    const az = i === 0 ? -25 : (i * (360 / TOTAL)) + (Math.random() * 30 - 15);
+    const kind = i === TOTAL - 1 ? 'green' : 'red';
+    const floating = kind === 'green';
+    const dist = floating ? 2.4 : 2.2 + Math.random() * 1.4;
+    const a = THREE.MathUtils.degToRad(az);
+    const obj = new THREE.Group();
+    const m = makeMushroom(kind);
+    m.scale.setScalar(floating ? 1.3 : 1.6);
+    obj.add(m);
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), hitMat);
+    hit.position.y = 0.25;
+    obj.add(hit);
+    const y = floating ? -0.2 : -1.25;
+    obj.position.set(-Math.sin(a) * dist, y, -Math.cos(a) * dist);
+    obj.userData = { baseY: y, phase: Math.random() * 6, kind, spin: 0.6 + Math.random() * 0.6 };
+    world.add(obj);
+    targets.push({ obj, hit, alive: true, dying: 0 });
+  }
+  updateScore();
+}
+function updateScore() { $('score').textContent = `${found}/${TOTAL}`; }
+
+/* device orientation -> camera quaternion */
+const zee = new THREE.Vector3(0, 0, 1), q0 = new THREE.Quaternion();
+const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+const euler = new THREE.Euler(), targetQ = new THREE.Quaternion();
+let gotOrientation = false;
+function onOrient(e) {
+  if (e.alpha == null) return;
+  gotOrientation = true;
+  const d = THREE.MathUtils.degToRad;
+  const orient = d(screen.orientation?.angle ?? window.orientation ?? 0);
+  euler.set(d(e.beta), d(e.alpha), -d(e.gamma), 'YXZ');
+  targetQ.setFromEuler(euler).multiply(q1).multiply(q0.setFromAxisAngle(zee, -orient));
+  if (!headingSet) {
+    camera.quaternion.copy(targetQ);
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(targetQ);
+    world.rotation.y = Math.atan2(-f.x, -f.z);
+    headingSet = true;
+  }
+}
+
+/* drag fallback (desktop / no gyro) */
+let yaw = 0, pitch = -0.25;
+function applyDrag() {
+  targetQ.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+}
+
+/* audio: short original chiptune blips */
+let actx;
+function tone(freq, t0, dur, type = 'square', vol = 0.12) {
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  o.connect(g).connect(actx.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function sfx(notes, step, type) {
+  if (!actx) return;
+  const t = actx.currentTime + 0.01;
+  notes.forEach((n, i) => tone(440 * Math.pow(2, (n - 69) / 12), t + i * step, step * 1.6, type));
+}
+const SFX = {
+  get: () => sfx([67, 71, 74, 79, 83, 86], 0.055),
+  oneup: () => sfx([76, 79, 88, 84, 86, 91], 0.09, 'triangle'),
+  win: () => sfx([60, 64, 67, 72, 67, 72, 76, 79, 84], 0.11),
+};
+
+/* input: tap to collect, drag to look (fallback) */
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let down = null;
+canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, moved: 0 }; });
+canvas.addEventListener('pointermove', (e) => {
+  if (!down) return;
+  const dx = e.clientX - down.x, dy = e.clientY - down.y;
+  down.moved += Math.abs(dx) + Math.abs(dy);
+  if (!gotOrientation) {
+    yaw += dx * 0.005; pitch = THREE.MathUtils.clamp(pitch + dy * 0.005, -1.4, 1.4);
+    applyDrag();
+  }
+  down.x = e.clientX; down.y = e.clientY;
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (down && down.moved < 12) tryCollect(e.clientX, e.clientY);
+  down = null;
+});
+
+function tryCollect(x, y) {
+  if (!running) return;
+  ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const alive = targets.filter(t => t.alive);
+  const hits = ray.intersectObjects(alive.map(t => t.hit), false);
+  if (!hits.length) return;
+  const t = alive.find(t => t.hit === hits[0].object);
+  t.alive = false; t.dying = 0.001;
+  found++;
+  updateScore();
+  const one = t.obj.userData.kind === 'green';
+  (one ? SFX.oneup : SFX.get)();
+  navigator.vibrate?.(40);
+  const p = document.createElement('div');
+  p.className = 'pop pixel' + (one ? ' one' : '');
+  p.textContent = one ? '1-UP' : '+1';
+  p.style.left = x + 'px'; p.style.top = y + 'px';
+  game.appendChild(p);
+  setTimeout(() => p.remove(), 950);
+  $('flash').style.opacity = 0.35;
+  setTimeout(() => ($('flash').style.opacity = 0), 90);
+  $('hint').style.opacity = 0;
+  if (found === TOTAL) setTimeout(win, 700);
+}
+
+function win() {
+  running = false;
+  SFX.win();
+  const s = Math.round((performance.now() - startTime) / 1000);
+  $('winTime').textContent = `Tempo: ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  $('win').classList.add('on');
+}
+
+/* arrow toward nearest uncollected mushroom when off-screen */
+const arrow = $('arrow'), tmpV = new THREE.Vector3();
+function updateArrow() {
+  const alive = targets.filter(t => t.alive);
+  if (!alive.length || !running) { arrow.style.display = 'none'; return; }
+  let best = null, bestAng = Infinity;
+  const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  for (const t of alive) {
+    t.obj.getWorldPosition(tmpV);
+    const ang = fwd.angleTo(tmpV.clone().sub(camera.position));
+    if (ang < bestAng) { bestAng = ang; best = t; }
+  }
+  best.obj.getWorldPosition(tmpV);
+  const cs = tmpV.clone().applyMatrix4(camera.matrixWorldInverse);
+  const proj = tmpV.clone().project(camera);
+  const onScreen = cs.z < 0 && Math.abs(proj.x) < 0.85 && Math.abs(proj.y) < 0.85;
+  if (onScreen) { arrow.style.display = 'none'; return; }
+  const deg = THREE.MathUtils.radToDeg(Math.atan2(cs.x, cs.y));
+  arrow.style.display = 'block';
+  arrow.style.transform = `rotate(${deg}deg)`;
+}
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+function loop(now) {
+  if (!game.classList.contains('on')) return;
+  const dt = Math.min(0.05, (now - lastFrame) / 1000 || 0);
+  lastFrame = now;
+  camera.quaternion.slerp(targetQ, gotOrientation ? 0.35 : 1);
+  camera.updateMatrixWorld();
+  for (const t of targets) {
+    const u = t.obj.userData;
+    t.obj.rotation.y += dt * u.spin;
+    if (t.alive) {
+      t.obj.position.y = u.baseY + Math.abs(Math.sin(now / 350 + u.phase)) * 0.08;
+    } else if (t.dying) {
+      t.dying += dt;
+      const k = t.dying / 0.45;
+      t.obj.position.y = u.baseY + k * 0.9;
+      t.obj.scale.setScalar(1 + k * 0.5);
+      t.obj.rotation.y += dt * 18;
+      if (k >= 1) { t.obj.visible = false; t.dying = 0; }
+    }
+  }
+  if (running) {
+    const s = Math.floor((now - startTime) / 1000);
+    $('timer').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+  updateArrow();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+async function startHunt() {
+  const err = $('err');
+  err.style.display = 'none';
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    actx.resume();
+    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== 'granted') throw new Error('Permesso movimento negato. Chiudi e riapri Safari, poi accetta.');
+    }
+    addEventListener('deviceorientation', onOrient);
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    video.srcObject = stream;
+    await video.play();
+  } catch (e) {
+    err.textContent = 'Non parte: ' + (e.message || e.name);
+    err.style.display = 'block';
+    return;
+  }
+  menu.style.display = 'none';
+  game.classList.add('on');
+  resize();
+  headingSet = false;
+  applyDrag();
+  camera.quaternion.copy(targetQ);
+  spawn();
+  $('win').classList.remove('on');
+  $('hint').style.opacity = 1;
+  setTimeout(() => {
+    if (!gotOrientation) $('hint').innerHTML = 'Niente giroscopio:<br>trascina per guardarti intorno';
+  }, 1500);
+  startTime = performance.now();
+  running = true;
+  requestAnimationFrame((t) => { lastFrame = t; loop(t); });
+}
+
+function stopHunt() {
+  running = false;
+  game.classList.remove('on');
+  menu.style.display = '';
+  const s = video.srcObject;
+  s?.getTracks().forEach(t => t.stop());
+  video.srcObject = null;
+  removeEventListener('deviceorientation', onOrient);
+  gotOrientation = false;
+}
+
+$('startBtn').addEventListener('click', startHunt);
+$('quit').addEventListener('click', stopHunt);
+$('menuBtn').addEventListener('click', stopHunt);
+$('againBtn').addEventListener('click', () => {
+  $('win').classList.remove('on');
+  headingSet = false;
+  spawn();
+  $('hint').style.opacity = 1;
+  startTime = performance.now();
+  running = true;
+});
+</script>
+</body>
+</html>
