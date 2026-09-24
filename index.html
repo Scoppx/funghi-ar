@@ -450,7 +450,7 @@ async function startHunt() {
     addEventListener('deviceorientation', onOrient);
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
     video.srcObject = stream;
-    await video.play();
+    video.play().catch(() => {});
   } catch (e) {
     err.textContent = 'Non parte: ' + (e.message || e.name);
     err.style.display = 'block';
