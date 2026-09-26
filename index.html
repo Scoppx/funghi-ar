@@ -630,21 +630,38 @@ function bearingDeg(lat1, lon1, lat2, lon2) {
   const x = Math.cos(rad(lat1)) * Math.sin(rad(lat2)) - Math.sin(rad(lat1)) * Math.cos(rad(lat2)) * Math.cos(dl);
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
+// n points evenly spaced (along the path) on a polyline of [lat, lon], ends included
+function alongLine(poly, n) {
+  const seg = poly.slice(1).map((p, i) => distM(...poly[i], ...p));
+  const total = seg.reduce((a, b) => a + b, 0);
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    let t = total * k / (n - 1), i = 0;
+    while (i < seg.length - 1 && t > seg[i]) t -= seg[i++];
+    const f = seg[i] ? Math.min(1, t / seg[i]) : 0;
+    out.push([poly[i][0] + (poly[i + 1][0] - poly[i][0]) * f, poly[i][1] + (poly[i + 1][1] - poly[i][1]) * f]);
+  }
+  return out;
+}
 /* ---------- /geo ---------- */
 
 // r = geofence radius in metres
 const STOPS = [
   { id: 'duomo', name: 'Duomo · sagrato', lat: 43.7731, lon: 11.2554, r: 40 },
   { id: 'signoria', name: 'Piazza della Signoria', lat: 43.7695, lon: 11.2558, r: 40 },
-  // via Empoli, north to south, one every ~63 m
-  { id: 'emp1', name: 'Via Empoli · 1', lat: 43.772416, lon: 11.205803, r: 25 },
-  { id: 'emp2', name: 'Via Empoli · 2', lat: 43.771952, lon: 11.205365, r: 25 },
-  { id: 'emp3', name: 'Via Empoli · 3', lat: 43.771499, lon: 11.204897, r: 25 },
-  { id: 'emp4', name: 'Via Empoli · 4', lat: 43.771045, lon: 11.20443, r: 25 },
-  { id: 'emp5', name: 'Via Empoli · 5', lat: 43.770589, lon: 11.203967, r: 25 },
-  { id: 'emp35', name: 'Via Empoli 35 · casa', lat: 43.770125, lon: 11.203655, r: 25 },
-  { id: 'emp7', name: 'Via Empoli · 7', lat: 43.769601, lon: 11.203311, r: 25 },
 ];
+// via Empoli (OpenStreetMap), north to south: 28 mushrooms, one every ~14 m
+const EMPOLI = [[43.772416, 11.205803], [43.772337, 11.205763], [43.772275, 11.2057], [43.771251, 11.20464],
+  [43.770247, 11.203618], [43.770215, 11.203531], [43.770134, 11.203485], [43.76988, 11.203407], [43.769601, 11.203311]];
+const HOME = [43.770125, 11.203655];
+{
+  const pts = alongLine(EMPOLI, 28);
+  const home = pts.reduce((best, p, i) => distM(...p, ...HOME) < distM(...pts[best], ...HOME) ? i : best, 0);
+  pts.forEach(([lat, lon], i) => STOPS.push({
+    id: 'empoli-' + (i + 1), lat, lon, r: 12,
+    name: i === home ? 'Via Empoli 35 · casa' : `Via Empoli · ${i + 1}`,
+  }));
+}
 const LS_MINE = 'funghi-gps-mine', LS_GOT = 'funghi-gps-got';
 const load = (k) => { try { return JSON.parse(localStorage.getItem(k)) || []; } catch { return []; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
