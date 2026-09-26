@@ -78,6 +78,39 @@
   #win .btn { max-width: 300px; }
   #err { color: #fff; background: var(--red); border: 4px solid var(--ink); padding: 12px; font-size: 14px;
     max-width: 380px; display: none; }
+
+  /* ---------- gps radar ---------- */
+  #radar { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; gap: 14px;
+    padding: calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 24px);
+    overflow-y: auto; touch-action: pan-y; background: var(--sky); }
+  #radar.on { display: flex; }
+  #radar > * { flex-shrink: 0; }
+  .rtop { width: 100%; max-width: 380px; display: flex; justify-content: space-between; align-items: center;
+    color: #fff; font-size: 13px; text-shadow: 2px 2px 0 var(--ink); }
+  .rtop span { display: flex; align-items: center; gap: 8px; }
+  .rtop img { width: 26px; height: 26px; image-rendering: pixelated; }
+  .rtop button { background: rgba(0,0,0,.35); color: #fff; border: 3px solid #fff; font: inherit; font-size: 10px; padding: 8px 10px; }
+  #rTarget { color: #fff; font-size: 12px; line-height: 1.6; text-align: center; text-shadow: 2px 2px 0 var(--ink); }
+  #rDist { color: var(--gold); font-size: 28px; text-shadow: 3px 3px 0 var(--ink); }
+  #rCompass { width: 150px; height: 150px; border-radius: 50%; background: var(--cream); border: 4px solid var(--ink);
+    box-shadow: 6px 6px 0 var(--ink); display: flex; align-items: center; justify-content: center; }
+  #rCompass svg { width: 96px; height: 96px; transition: transform .15s linear; }
+  #rAcc { color: #fff; font-size: 13px; text-align: center; min-height: 18px; }
+  #rAcc.bad { color: var(--gold); font-weight: 700; }
+  #radar .btn { max-width: 380px; line-height: 1.6; }
+  #rOpen { display: none; }
+  #rOpen.on { display: flex; animation: nudge .5s infinite alternate; }
+  #rList { list-style: none; margin: 0; padding: 0; width: 100%; max-width: 380px; background: var(--cream);
+    border: 4px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); }
+  #rList li { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-bottom: 2px solid #e4d3ae;
+    font-size: 14px; cursor: pointer; }
+  #rList li:last-child { border-bottom: 0; }
+  #rList li.sel { background: #ffe98a; }
+  #rList li.got { color: #777; text-decoration: line-through; }
+  #rList li .n { flex: 1; min-width: 0; }
+  #rList li .d { font-variant-numeric: tabular-nums; font-weight: 700; }
+  #rList li .x { border: 0; background: none; font-size: 16px; padding: 0 4px; color: var(--red); }
+  #rReset { background: none; border: 0; color: #fff; text-decoration: underline; font-size: 13px; padding: 6px; }
 </style>
 </head>
 <body>
@@ -102,7 +135,26 @@
     <button class="btn red pixel" id="startBtn">INIZIA CACCIA</button>
     <div class="note">Safari chiede due permessi: fotocamera e movimento. Accetta entrambi.</div>
   </div>
+  <div class="card">
+    <h2 class="pixel">3 · FUNGHI NEL MONDO</h2>
+    <p>Funghi piantati in posti veri: Duomo, Piazza della Signoria, via Empoli. La freccia ti porta lì. Quando sei vicino si apre la fotocamera e il fungo è davanti a te.</p>
+    <button class="btn pixel" id="gpsBtn">APRI RADAR</button>
+    <div class="note">Safari chiede anche la posizione. Accetta.</div>
+  </div>
   <div id="err"></div>
+</section>
+
+<section id="radar">
+  <div class="rtop pixel"><span><img id="rIcon" alt=""><b id="rCount">0/0</b></span><button id="rBack">MENU</button></div>
+  <div id="rTarget" class="pixel">Cerco il GPS…</div>
+  <div id="rDist" class="pixel">--- m</div>
+  <div id="rCompass"><svg id="rArrow" viewBox="0 0 10 10" shape-rendering="crispEdges">
+    <path fill="#e52521" stroke="#000" stroke-width=".5" d="M5 .6 9.4 5.4H6.6V9.4H3.4V5.4H.6Z"/></svg></div>
+  <div id="rAcc">GPS: attendo…</div>
+  <button class="btn red pixel" id="rOpen">FUNGO VICINO!<br>APRI FOTOCAMERA</button>
+  <button class="btn pixel" id="rHere">PIANTA FUNGO QUI</button>
+  <ul id="rList"></ul>
+  <button id="rReset">Azzera i funghi raccolti</button>
 </section>
 
 <section id="game">
@@ -118,9 +170,9 @@
   <div id="flash"></div>
   <button id="quit" class="pixel">ESCI</button>
   <div id="win">
-    <h2 class="pixel">TUTTI I FUNGHI<br>TROVATI!</h2>
+    <h2 class="pixel" id="winTitle">TUTTI I FUNGHI<br>TROVATI!</h2>
     <p class="pixel" id="winTime"></p>
-    <p class="pixel">Grazie Mario!<br>Ma la tua principessa<br>è in un altro castello...</p>
+    <p class="pixel" id="winMsg">Grazie Mario!<br>Ma la tua principessa<br>è in un altro castello...</p>
     <button class="btn pixel" id="againBtn">RIGIOCA</button>
     <button class="btn red pixel" id="menuBtn">MENU</button>
   </div>
@@ -151,7 +203,7 @@ function pixelIcon(capColor) {
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 const ICON_RED = pixelIcon('#e52521');
-for (const id of ['logo', 'qlImg', 'hudIcon']) document.getElementById(id).src = ICON_RED;
+for (const id of ['logo', 'qlImg', 'hudIcon', 'rIcon']) document.getElementById(id).src = ICON_RED;
 document.querySelector('#qlLink img').src = ICON_RED;
 
 /* ---------- 3D mushroom ---------- */
@@ -250,36 +302,45 @@ const world = new THREE.Group();
 scene.add(world);
 
 const TOTAL = 6;
-let targets = [], found = 0, startTime = 0, running = false, headingSet = false, lastFrame = 0;
+let targets = [], found = 0, total = TOTAL, startTime = 0, running = false, headingSet = false, lastFrame = 0;
+let gpsMode = false, gpsShot = null; // gpsShot: { stop, bearing } while hunting one real-world mushroom
 
-function spawn() {
+function clearTargets() {
   for (const t of targets) world.remove(t.obj);
   targets = [];
   found = 0;
-  const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+}
+function addTarget(kind, az, dist, y, scale) {
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+  hit.position.y = 0.25;
+  const obj = new THREE.Group();
+  const m = makeMushroom(kind);
+  m.scale.setScalar(scale);
+  obj.add(m, hit);
+  placeAt(obj, az, dist, y);
+  obj.userData = { baseY: y, dist, phase: Math.random() * 6, kind, spin: 0.6 + Math.random() * 0.6 };
+  world.add(obj);
+  targets.push({ obj, hit, alive: true, dying: 0 });
+}
+// az: yaw in world, radians, positive = to the left (three.js looks down -Z)
+function placeAt(obj, az, dist, y) {
+  obj.position.set(-Math.sin(az) * dist, y, -Math.cos(az) * dist);
+}
+
+function spawn() {
+  clearTargets();
+  total = TOTAL;
   for (let i = 0; i < TOTAL; i++) {
     // first mushroom slightly right of start view, others spread around 360°
     const az = i === 0 ? -25 : (i * (360 / TOTAL)) + (Math.random() * 30 - 15);
     const kind = i === TOTAL - 1 ? 'green' : 'red';
     const floating = kind === 'green';
     const dist = floating ? 2.4 : 2.2 + Math.random() * 1.4;
-    const a = THREE.MathUtils.degToRad(az);
-    const obj = new THREE.Group();
-    const m = makeMushroom(kind);
-    m.scale.setScalar(floating ? 1.3 : 1.6);
-    obj.add(m);
-    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), hitMat);
-    hit.position.y = 0.25;
-    obj.add(hit);
-    const y = floating ? -0.2 : -1.25;
-    obj.position.set(-Math.sin(a) * dist, y, -Math.cos(a) * dist);
-    obj.userData = { baseY: y, phase: Math.random() * 6, kind, spin: 0.6 + Math.random() * 0.6 };
-    world.add(obj);
-    targets.push({ obj, hit, alive: true, dying: 0 });
+    addTarget(kind, THREE.MathUtils.degToRad(az), dist, floating ? -0.2 : -1.25, floating ? 1.3 : 1.6);
   }
   updateScore();
 }
-function updateScore() { $('score').textContent = `${found}/${TOTAL}`; }
+function updateScore() { $('score').textContent = `${found}/${total}`; }
 
 /* device orientation -> camera quaternion */
 const zee = new THREE.Vector3(0, 0, 1), q0 = new THREE.Quaternion();
@@ -293,13 +354,32 @@ function onOrient(e) {
   const orient = d(screen.orientation?.angle ?? window.orientation ?? 0);
   euler.set(d(e.beta), d(e.alpha), -d(e.gamma), 'YXZ');
   targetQ.setFromEuler(euler).multiply(q1).multiply(q0.setFromAxisAngle(zee, -orient));
+  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(targetQ);
+  const camYaw = Math.atan2(-f.x, -f.z);
   if (!headingSet) {
     camera.quaternion.copy(targetQ);
-    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(targetQ);
-    world.rotation.y = Math.atan2(-f.x, -f.z);
+    world.rotation.y = gpsMode && compass.ok ? 0 : camYaw;
     headingSet = true;
   }
+  // compass: iOS gives webkitCompassHeading, Android an absolute alpha
+  let h = e.webkitCompassHeading;
+  if (!(h >= 0) && e.absolute) h = 360 - e.alpha;
+  if (h >= 0) compass.feed(h, camYaw);
 }
+
+/* smoothed compass: heading (deg, clockwise from north) and the world yaw that points north */
+const compass = {
+  ok: false, hs: 0, hc: 0, ns: 0, nc: 0,
+  feed(h, camYaw) {
+    const hr = THREE.MathUtils.degToRad(h), ny = camYaw + hr, k = this.ok ? 0.12 : 1;
+    this.hs += (Math.sin(hr) - this.hs) * k; this.hc += (Math.cos(hr) - this.hc) * k;
+    this.ns += (Math.sin(ny) - this.ns) * k; this.nc += (Math.cos(ny) - this.nc) * k;
+    this.ok = true;
+  },
+  get heading() { return (THREE.MathUtils.radToDeg(Math.atan2(this.hs, this.hc)) + 360) % 360; },
+  get northYaw() { return Math.atan2(this.ns, this.nc); },
+  reset() { this.ok = false; },
+};
 
 /* drag fallback (desktop / no gyro) */
 let yaw = 0, pitch = -0.25;
@@ -368,7 +448,7 @@ function tryCollect(x, y) {
   $('flash').style.opacity = 0.35;
   setTimeout(() => ($('flash').style.opacity = 0), 90);
   $('hint').style.opacity = 0;
-  if (found === TOTAL) setTimeout(win, 700);
+  if (found === total) setTimeout(win, 700);
 }
 
 function win() {
@@ -376,6 +456,17 @@ function win() {
   SFX.win();
   const s = Math.round((performance.now() - startTime) / 1000);
   $('winTime').textContent = `Tempo: ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  if (gpsMode) {
+    markGot(gpsShot.stop.id);
+    const left = allStops().filter(st => !isGot(st.id)).length;
+    $('winTitle').innerHTML = 'FUNGO PRESO!';
+    $('winMsg').innerHTML = `${gpsShot.stop.name}<br><br>` + (left ? `Ne mancano ${left}.<br>Torna al radar.` : 'Li hai presi tutti!<br>Ma la tua principessa<br>è in un altro castello...');
+  } else {
+    $('winTitle').innerHTML = 'TUTTI I FUNGHI<br>TROVATI!';
+    $('winMsg').innerHTML = 'Grazie Mario!<br>Ma la tua principessa<br>è in un altro castello...';
+  }
+  $('againBtn').style.display = gpsMode ? 'none' : '';
+  $('menuBtn').textContent = gpsMode ? 'RADAR' : 'MENU';
   $('win').classList.add('on');
 }
 
@@ -414,6 +505,10 @@ function loop(now) {
   lastFrame = now;
   camera.quaternion.slerp(targetQ, gotOrientation ? 0.35 : 1);
   camera.updateMatrixWorld();
+  if (gpsShot && compass.ok && targets[0]?.alive) {
+    const t = targets[0];
+    placeAt(t.obj, compass.northYaw - THREE.MathUtils.degToRad(gpsShot.bearing), t.obj.userData.dist, t.obj.userData.baseY);
+  }
   for (const t of targets) {
     const u = t.obj.userData;
     t.obj.rotation.y += dt * u.spin;
@@ -437,33 +532,42 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-async function startHunt() {
-  const err = $('err');
-  err.style.display = 'none';
+/* permissions + camera stream; errors go to the given box */
+async function openCamera(errBox) {
+  errBox.style.display = 'none';
   try {
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    actx.resume();
-    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
-      const r = await DeviceOrientationEvent.requestPermission();
-      if (r !== 'granted') throw new Error('Permesso movimento negato. Chiudi e riapri Safari, poi accetta.');
-    }
-    addEventListener('deviceorientation', onOrient);
+    await askMotion();
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
     video.srcObject = stream;
     video.play().catch(() => {});
+    return true;
   } catch (e) {
-    err.textContent = 'Non parte: ' + (e.message || e.name);
-    err.style.display = 'block';
-    return;
+    errBox.textContent = 'Non parte: ' + (e.message || e.name);
+    errBox.style.display = 'block';
+    return false;
   }
+}
+async function askMotion() {
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  actx.resume();
+  if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+    const r = await DeviceOrientationEvent.requestPermission();
+    if (r !== 'granted') throw new Error('Permesso movimento negato. Chiudi e riapri Safari, poi accetta.');
+  }
+  removeEventListener('deviceorientation', onOrient);
+  addEventListener('deviceorientation', onOrient);
+}
+
+function enterGame(hint) {
   menu.style.display = 'none';
+  radar.classList.remove('on');
   game.classList.add('on');
   resize();
   headingSet = false;
   applyDrag();
   camera.quaternion.copy(targetQ);
-  spawn();
   $('win').classList.remove('on');
+  $('hint').innerHTML = hint;
   $('hint').style.opacity = 1;
   setTimeout(() => {
     if (!gotOrientation) $('hint').innerHTML = 'Niente giroscopio:<br>trascina per guardarti intorno';
@@ -473,13 +577,28 @@ async function startHunt() {
   requestAnimationFrame((t) => { lastFrame = t; loop(t); });
 }
 
+async function startHunt() {
+  if (!(await openCamera($('err')))) return;
+  gpsMode = false;
+  gpsShot = null;
+  world.rotation.y = 0;
+  spawn();
+  enterGame('Gira su te stesso<br>e cerca i funghi');
+}
+
 function stopHunt() {
   running = false;
   game.classList.remove('on');
-  menu.style.display = '';
   const s = video.srcObject;
   s?.getTracks().forEach(t => t.stop());
   video.srcObject = null;
+  if (gpsMode) {
+    gpsShot = null;
+    radar.classList.add('on');
+    renderRadar();
+    return;
+  }
+  menu.style.display = '';
   removeEventListener('deviceorientation', onOrient);
   gotOrientation = false;
 }
@@ -495,6 +614,162 @@ $('againBtn').addEventListener('click', () => {
   startTime = performance.now();
   running = true;
 });
+
+/* ---------- mode 3: real-world mushrooms (GPS) ---------- */
+/* ---------- geo ---------- */
+const R_EARTH = 6371000, rad = (d) => d * Math.PI / 180;
+function distM(lat1, lon1, lat2, lon2) {
+  const dp = rad(lat2 - lat1), dl = rad(lon2 - lon1);
+  const h = Math.sin(dp / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dl / 2) ** 2;
+  return 2 * R_EARTH * Math.asin(Math.sqrt(h));
+}
+// initial bearing, degrees clockwise from north
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  const dl = rad(lon2 - lon1);
+  const y = Math.sin(dl) * Math.cos(rad(lat2));
+  const x = Math.cos(rad(lat1)) * Math.sin(rad(lat2)) - Math.sin(rad(lat1)) * Math.cos(rad(lat2)) * Math.cos(dl);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+/* ---------- /geo ---------- */
+
+// r = geofence radius in metres
+const STOPS = [
+  { id: 'duomo', name: 'Duomo · sagrato', lat: 43.7731, lon: 11.2554, r: 40 },
+  { id: 'signoria', name: 'Piazza della Signoria', lat: 43.7695, lon: 11.2558, r: 40 },
+  // via Empoli, north to south, one every ~63 m
+  { id: 'emp1', name: 'Via Empoli · 1', lat: 43.772416, lon: 11.205803, r: 25 },
+  { id: 'emp2', name: 'Via Empoli · 2', lat: 43.771952, lon: 11.205365, r: 25 },
+  { id: 'emp3', name: 'Via Empoli · 3', lat: 43.771499, lon: 11.204897, r: 25 },
+  { id: 'emp4', name: 'Via Empoli · 4', lat: 43.771045, lon: 11.20443, r: 25 },
+  { id: 'emp5', name: 'Via Empoli · 5', lat: 43.770589, lon: 11.203967, r: 25 },
+  { id: 'emp35', name: 'Via Empoli 35 · casa', lat: 43.770125, lon: 11.203655, r: 25 },
+  { id: 'emp7', name: 'Via Empoli · 7', lat: 43.769601, lon: 11.203311, r: 25 },
+];
+const LS_MINE = 'funghi-gps-mine', LS_GOT = 'funghi-gps-got';
+const load = (k) => { try { return JSON.parse(localStorage.getItem(k)) || []; } catch { return []; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+let mine = load(LS_MINE), got = new Set(load(LS_GOT));
+const allStops = () => STOPS.concat(mine);
+const isGot = (id) => got.has(id);
+function markGot(id) { got.add(id); save(LS_GOT, [...got]); }
+
+const radar = $('radar');
+let pos = null, geoWatch = null, pickedId = null, radarTimer = null;
+
+async function startRadar() {
+  try {
+    await askMotion();
+  } catch (e) {
+    $('err').textContent = 'Non parte: ' + e.message;
+    $('err').style.display = 'block';
+    return;
+  }
+  gpsMode = true;
+  compass.reset();
+  menu.style.display = 'none';
+  radar.classList.add('on');
+  $('rAcc').textContent = 'GPS: attendo…';
+  if (!navigator.geolocation) { $('rAcc').textContent = 'Questo browser non dà la posizione.'; return; }
+  geoWatch = navigator.geolocation.watchPosition((p) => {
+    pos = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy };
+    renderRadar();
+  }, (e) => {
+    $('rAcc').textContent = e.code === 1 ? 'Posizione negata. Impostazioni › Safari › Posizione.' : 'GPS non disponibile: ' + e.message;
+    $('rAcc').className = 'bad';
+  }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
+  radarTimer = setInterval(spinArrow, 100);
+  renderRadar();
+}
+function leaveRadar() {
+  if (geoWatch != null) navigator.geolocation.clearWatch(geoWatch);
+  geoWatch = null;
+  clearInterval(radarTimer);
+  gpsMode = false;
+  radar.classList.remove('on');
+  menu.style.display = '';
+  removeEventListener('deviceorientation', onOrient);
+  gotOrientation = false;
+}
+
+function withDist() {
+  return allStops().map(st => ({ ...st, d: pos ? distM(pos.lat, pos.lon, st.lat, st.lon) : null }));
+}
+function currentTarget(list) {
+  const open = list.filter(st => !isGot(st.id));
+  return open.find(st => st.id === pickedId) || open.sort((a, b) => (a.d ?? 0) - (b.d ?? 0))[0] || null;
+}
+const fmtM = (d) => d == null ? '---' : d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`;
+
+function renderRadar() {
+  const list = withDist();
+  const target = currentTarget(list);
+  $('rCount').textContent = `${list.filter(st => isGot(st.id)).length}/${list.length}`;
+  $('rTarget').innerHTML = target ? target.name : 'Tutti presi!';
+  $('rDist').textContent = target ? fmtM(target.d) : '★';
+  if (pos) {
+    const bad = pos.acc > 30;
+    $('rAcc').textContent = `GPS ±${Math.round(pos.acc)} m` + (bad ? ' · impreciso, vai in un punto aperto' : '');
+    $('rAcc').className = bad ? 'bad' : '';
+  }
+  $('rOpen').classList.toggle('on', !!(target && target.d != null && target.d <= target.r));
+  const ul = $('rList');
+  ul.innerHTML = '';
+  for (const st of list.slice().sort((a, b) => (a.d ?? 0) - (b.d ?? 0))) {
+    const li = document.createElement('li');
+    li.className = (isGot(st.id) ? 'got' : '') + (target && st.id === target.id ? ' sel' : '');
+    li.innerHTML = `<span>${isGot(st.id) ? '✔' : '🍄'}</span><span class="n"></span><span class="d">${fmtM(st.d)}</span>`;
+    li.querySelector('.n').textContent = st.name;
+    if (st.mine) {
+      const x = document.createElement('button');
+      x.className = 'x'; x.textContent = '✕'; x.setAttribute('aria-label', 'Elimina');
+      x.onclick = (e) => { e.stopPropagation(); mine = mine.filter(m => m.id !== st.id); save(LS_MINE, mine); renderRadar(); };
+      li.appendChild(x);
+    }
+    li.onclick = () => { pickedId = st.id; renderRadar(); };
+    ul.appendChild(li);
+  }
+  spinArrow();
+}
+function spinArrow() {
+  if (!pos) return;
+  const target = currentTarget(withDist());
+  if (!target) return;
+  const b = bearingDeg(pos.lat, pos.lon, target.lat, target.lon);
+  // with compass: arrow points to the stop; without: north is up
+  const rot = compass.ok ? b - compass.heading : b;
+  $('rArrow').style.transform = `rotate(${rot}deg)`;
+}
+
+async function openGpsCam() {
+  const target = currentTarget(withDist());
+  if (!target || !pos) return;
+  if (!(await openCamera($('err')))) { radar.classList.add('on'); return; }
+  // bearing frozen at open: GPS jitter must not move the mushroom
+  const d = distM(pos.lat, pos.lon, target.lat, target.lon);
+  const bearing = d < 6 && compass.ok ? compass.heading + 25 : bearingDeg(pos.lat, pos.lon, target.lat, target.lon);
+  gpsShot = { stop: target, bearing };
+  world.rotation.y = 0;
+  clearTargets();
+  total = 1;
+  addTarget('red', THREE.MathUtils.degToRad(-25), 3, -1.25, 1.8);
+  updateScore();
+  enterGame(compass.ok ? 'Il fungo è verso ' + target.name + '<br>girati e cercalo' : 'Niente bussola:<br>girati e cerca il fungo');
+}
+
+function plantHere() {
+  if (!pos) { $('rAcc').textContent = 'Aspetta il GPS…'; return; }
+  const n = mine.length + 1;
+  mine.push({ id: 'mine-' + Date.now(), name: `Il mio fungo ${n}`, lat: pos.lat, lon: pos.lon, r: 25, mine: true });
+  save(LS_MINE, mine);
+  SFX.get();
+  renderRadar();
+}
+
+$('gpsBtn').addEventListener('click', startRadar);
+$('rBack').addEventListener('click', leaveRadar);
+$('rOpen').addEventListener('click', openGpsCam);
+$('rHere').addEventListener('click', plantHere);
+$('rReset').addEventListener('click', () => { got.clear(); save(LS_GOT, []); pickedId = null; renderRadar(); });
 </script>
 </body>
 </html>
