@@ -303,7 +303,8 @@ scene.add(world);
 
 const TOTAL = 6;
 let targets = [], found = 0, total = TOTAL, startTime = 0, running = false, headingSet = false, lastFrame = 0;
-let gpsMode = false, gpsShot = null; // gpsShot: { stop, bearing } while hunting one real-world mushroom
+let gpsMode = false, gpsShot = null; // gpsShot: { stop, bearing, dist, nearSince, unlocked } while hunting one real-world mushroom
+const COLLECT_M = 4, BEARING_LOCK_M = 6, RESCUE_M = 10, RESCUE_MS = 30000;
 
 function clearTargets() {
   for (const t of targets) world.remove(t.obj);
@@ -433,23 +434,32 @@ function tryCollect(x, y) {
   const hits = ray.intersectObjects(alive.map(t => t.hit), false);
   if (!hits.length) return;
   const t = alive.find(t => t.hit === hits[0].object);
+  if (gpsShot && !canCollect()) {
+    popText(x, y, `ancora ${Math.round(gpsShot.dist - COLLECT_M)} m`, '');
+    return;
+  }
   t.alive = false; t.dying = 0.001;
   found++;
   updateScore();
   const one = t.obj.userData.kind === 'green';
   (one ? SFX.oneup : SFX.get)();
   navigator.vibrate?.(40);
-  const p = document.createElement('div');
-  p.className = 'pop pixel' + (one ? ' one' : '');
-  p.textContent = one ? '1-UP' : '+1';
-  p.style.left = x + 'px'; p.style.top = y + 'px';
-  game.appendChild(p);
-  setTimeout(() => p.remove(), 950);
+  popText(x, y, one ? '1-UP' : '+1', one ? ' one' : '');
   $('flash').style.opacity = 0.35;
   setTimeout(() => ($('flash').style.opacity = 0), 90);
   $('hint').style.opacity = 0;
   if (found === total) setTimeout(win, 700);
 }
+
+function popText(x, y, text, cls) {
+  const p = document.createElement('div');
+  p.className = 'pop pixel' + cls;
+  p.textContent = text;
+  p.style.left = x + 'px'; p.style.top = y + 'px';
+  game.appendChild(p);
+  setTimeout(() => p.remove(), 950);
+}
+const canCollect = () => !!gpsShot && (gpsShot.dist <= COLLECT_M || gpsShot.unlocked);
 
 function win() {
   running = false;
@@ -505,9 +515,18 @@ function loop(now) {
   lastFrame = now;
   camera.quaternion.slerp(targetQ, gotOrientation ? 0.35 : 1);
   camera.updateMatrixWorld();
-  if (gpsShot && compass.ok && targets[0]?.alive) {
-    const t = targets[0];
-    placeAt(t.obj, compass.northYaw - THREE.MathUtils.degToRad(gpsShot.bearing), t.obj.userData.dist, t.obj.userData.baseY);
+  if (gpsShot && targets[0]?.alive) {
+    // real distance: far = small near the horizon, grows as you walk in; glide to smooth GPS steps
+    const t = targets[0], u = t.obj.userData;
+    const yaw = compass.ok ? compass.northYaw - THREE.MathUtils.degToRad(gpsShot.bearing) : THREE.MathUtils.degToRad(-25);
+    const d = THREE.MathUtils.clamp(gpsShot.dist, 1.5, 40);
+    tmpV.set(-Math.sin(yaw) * d, 0, -Math.cos(yaw) * d);
+    const k = u.placed ? 1 - Math.exp(-dt * 4) : 1;
+    u.placed = true;
+    t.obj.position.x += (tmpV.x - t.obj.position.x) * k;
+    t.obj.position.z += (tmpV.z - t.obj.position.z) * k;
+    t.obj.scale.setScalar(1 + Math.hypot(t.obj.position.x, t.obj.position.z) / 10);
+    u.dist = d;
   }
   for (const t of targets) {
     const u = t.obj.userData;
@@ -525,7 +544,8 @@ function loop(now) {
   }
   if (running) {
     const s = Math.floor((now - startTime) / 1000);
-    $('timer').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    $('timer').textContent = gpsShot ? (canCollect() ? 'PRENDILO!' : `${Math.round(gpsShot.dist)} m`)
+      : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }
   updateArrow();
   renderer.render(scene, camera);
@@ -643,6 +663,15 @@ function alongLine(poly, n) {
   }
   return out;
 }
+// 1D Kalman on a GPS fix: trusts new fixes by their accuracy, allows ~2 m/s of walking
+function smoothFix(prev, fix) {
+  if (!prev) return { lat: fix.lat, lon: fix.lon, acc: fix.acc, v: fix.acc ** 2, t: fix.t };
+  const dt = Math.max(0.2, (fix.t - prev.t) / 1000);
+  const pv = prev.v + (2 * dt) ** 2;
+  const k = pv / (pv + fix.acc ** 2);
+  const v = (1 - k) * pv;
+  return { lat: prev.lat + (fix.lat - prev.lat) * k, lon: prev.lon + (fix.lon - prev.lon) * k, acc: Math.sqrt(v), v, t: fix.t };
+}
 /* ---------- /geo ---------- */
 
 // r = geofence radius in metres
@@ -725,13 +754,15 @@ async function startRadar() {
   $('rAcc').textContent = 'GPS: attendo…';
   if (!navigator.geolocation) { $('rAcc').textContent = 'Questo browser non dà la posizione.'; return; }
   geoWatch = navigator.geolocation.watchPosition((p) => {
-    pos = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy };
+    const fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, t: p.timestamp || Date.now() };
+    pos = { ...smoothFix(pos, fix), rawAcc: fix.acc };
     renderRadar();
+    trackShot();
   }, (e) => {
     $('rAcc').textContent = e.code === 1 ? 'Posizione negata. Impostazioni › Safari › Posizione.' : 'GPS non disponibile: ' + e.message;
     $('rAcc').className = 'bad';
   }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
-  radarTimer = setInterval(spinArrow, 100);
+  radarTimer = setInterval(() => { spinArrow(); trackShot(); }, 100);
   renderRadar();
 }
 function leaveRadar() {
@@ -761,8 +792,8 @@ function renderRadar() {
   $('rTarget').innerHTML = target ? target.name : 'Tutti presi!';
   $('rDist').textContent = target ? fmtM(target.d) : '★';
   if (pos) {
-    const bad = pos.acc > 30;
-    $('rAcc').textContent = `GPS ±${Math.round(pos.acc)} m` + (bad ? ' · impreciso, vai in un punto aperto' : '');
+    const bad = pos.rawAcc > 30;
+    $('rAcc').textContent = `GPS ±${Math.round(pos.rawAcc)} m` + (bad ? ' · impreciso, vai in un punto aperto' : '');
     $('rAcc').className = bad ? 'bad' : '';
   }
   $('rOpen').classList.toggle('on', !!(target && target.d != null && target.d <= target.r));
@@ -801,13 +832,32 @@ async function openGpsCam() {
   // bearing frozen at open: GPS jitter must not move the mushroom
   const d = distM(pos.lat, pos.lon, target.lat, target.lon);
   const bearing = d < 6 && compass.ok ? compass.heading + 25 : bearingDeg(pos.lat, pos.lon, target.lat, target.lon);
-  gpsShot = { stop: target, bearing };
+  gpsShot = { stop: target, bearing, dist: d, nearSince: null, unlocked: false };
   world.rotation.y = 0;
   clearTargets();
   total = 1;
-  addTarget('red', THREE.MathUtils.degToRad(-25), 3, -1.25, 1.8);
+  addTarget('red', THREE.MathUtils.degToRad(-25), THREE.MathUtils.clamp(d, 1.5, 40), -1.4, 1.8);
   updateScore();
-  enterGame(compass.ok ? 'Il fungo è verso ' + target.name + '<br>girati e cercalo' : 'Niente bussola:<br>girati e cerca il fungo');
+  enterGame((compass.ok ? 'Il fungo è verso ' + target.name : 'Niente bussola: cercalo intorno a te')
+    + `<br>Avvicinati: si prende a ${COLLECT_M} m`);
+}
+
+// live GPS while the camera is open: distance always, bearing only while far enough to trust it
+function trackShot() {
+  if (!gpsShot || !running || !pos) return;
+  const st = gpsShot.stop;
+  const d = distM(pos.lat, pos.lon, st.lat, st.lon);
+  if (d >= BEARING_LOCK_M) gpsShot.bearing = bearingDeg(pos.lat, pos.lon, st.lat, st.lon);
+  gpsShot.dist = d;
+  // rescue: GPS stuck a few metres off, but you have been right there for a while
+  if (d <= RESCUE_M) gpsShot.nearSince ??= Date.now();
+  else gpsShot.nearSince = null;
+  if (!gpsShot.unlocked && gpsShot.nearSince && Date.now() - gpsShot.nearSince > RESCUE_MS) {
+    gpsShot.unlocked = true;
+    $('hint').innerHTML = 'Il GPS non ti vede,<br>ma sei lì: prendilo!';
+    $('hint').style.opacity = 1;
+    SFX.get();
+  }
 }
 
 function plantHere() {
