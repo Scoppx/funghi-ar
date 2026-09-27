@@ -303,8 +303,9 @@ scene.add(world);
 
 const TOTAL = 6;
 let targets = [], found = 0, total = TOTAL, startTime = 0, running = false, headingSet = false, lastFrame = 0;
-let gpsMode = false, gpsShot = null; // gpsShot: { stop, bearing, dist, nearSince, unlocked } while hunting one real-world mushroom
-const COLLECT_M = 4, BEARING_LOCK_M = 6, RESCUE_M = 10, RESCUE_MS = 30000;
+// gpsHunt: camera open on real-world mushrooms; each target then has t.shot = { stop, bearing, dist, nearSince, unlocked }
+let gpsMode = false, gpsHunt = false;
+const COLLECT_M = 4, BEARING_LOCK_M = 6, RESCUE_M = 10, RESCUE_MS = 30000, VIEW_M = 45, MAX_VISIBLE = 8;
 
 function clearTargets() {
   for (const t of targets) world.remove(t.obj);
@@ -321,7 +322,9 @@ function addTarget(kind, az, dist, y, scale) {
   placeAt(obj, az, dist, y);
   obj.userData = { baseY: y, dist, phase: Math.random() * 6, kind, spin: 0.6 + Math.random() * 0.6 };
   world.add(obj);
-  targets.push({ obj, hit, alive: true, dying: 0 });
+  const t = { obj, hit, alive: true, dying: 0 };
+  targets.push(t);
+  return t;
 }
 // az: yaw in world, radians, positive = to the left (three.js looks down -Z)
 function placeAt(obj, az, dist, y) {
@@ -434,10 +437,11 @@ function tryCollect(x, y) {
   const hits = ray.intersectObjects(alive.map(t => t.hit), false);
   if (!hits.length) return;
   const t = alive.find(t => t.hit === hits[0].object);
-  if (gpsShot && !canCollect()) {
-    popText(x, y, `ancora ${Math.round(gpsShot.dist - COLLECT_M)} m`, '');
+  if (t.shot && !canCollect(t.shot)) {
+    popText(x, y, `ancora ${Math.round(t.shot.dist - COLLECT_M)} m`, '');
     return;
   }
+  if (t.shot) markGot(t.shot.stop.id);
   t.alive = false; t.dying = 0.001;
   found++;
   updateScore();
@@ -448,7 +452,8 @@ function tryCollect(x, y) {
   $('flash').style.opacity = 0.35;
   setTimeout(() => ($('flash').style.opacity = 0), 90);
   $('hint').style.opacity = 0;
-  if (found === total) setTimeout(win, 700);
+  if (gpsHunt) setTimeout(() => { syncShots(); if (running && !liveShots().length) win(); }, 700);
+  else if (found === total) setTimeout(win, 700);
 }
 
 function popText(x, y, text, cls) {
@@ -459,7 +464,8 @@ function popText(x, y, text, cls) {
   game.appendChild(p);
   setTimeout(() => p.remove(), 950);
 }
-const canCollect = () => !!gpsShot && (gpsShot.dist <= COLLECT_M || gpsShot.unlocked);
+const canCollect = (shot) => shot.dist <= COLLECT_M || shot.unlocked;
+const liveShots = () => targets.filter(t => t.alive && t.shot);
 
 function win() {
   running = false;
@@ -467,10 +473,10 @@ function win() {
   const s = Math.round((performance.now() - startTime) / 1000);
   $('winTime').textContent = `Tempo: ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   if (gpsMode) {
-    markGot(gpsShot.stop.id);
     const left = allStops().filter(st => !isGot(st.id)).length;
-    $('winTitle').innerHTML = 'FUNGO PRESO!';
-    $('winMsg').innerHTML = `${gpsShot.stop.name}<br><br>` + (left ? `Ne mancano ${left}.<br>Torna al radar.` : 'Li hai presi tutti!<br>Ma la tua principessa<br>è in un altro castello...');
+    $('winTitle').innerHTML = found === 1 ? 'FUNGO PRESO!' : `${found} FUNGHI<br>PRESI!`;
+    $('winMsg').innerHTML = (found ? 'Qui intorno non ce ne sono altri.<br><br>' : '')
+      + (left ? `Ne mancano ${left}.<br>Torna al radar.` : 'Li hai presi tutti!<br>Ma la tua principessa<br>è in un altro castello...');
   } else {
     $('winTitle').innerHTML = 'TUTTI I FUNGHI<br>TROVATI!';
     $('winMsg').innerHTML = 'Grazie Mario!<br>Ma la tua principessa<br>è in un altro castello...';
@@ -515,11 +521,11 @@ function loop(now) {
   lastFrame = now;
   camera.quaternion.slerp(targetQ, gotOrientation ? 0.35 : 1);
   camera.updateMatrixWorld();
-  if (gpsShot && targets[0]?.alive) {
-    // real distance: far = small near the horizon, grows as you walk in; glide to smooth GPS steps
-    const t = targets[0], u = t.obj.userData;
-    const yaw = compass.ok ? compass.northYaw - THREE.MathUtils.degToRad(gpsShot.bearing) : THREE.MathUtils.degToRad(-25);
-    const d = THREE.MathUtils.clamp(gpsShot.dist, 1.5, 40);
+  // real distance: far = small near the horizon, grows as you walk in; glide to smooth GPS steps
+  for (const t of liveShots()) {
+    const u = t.obj.userData;
+    const yaw = compass.ok ? compass.northYaw - THREE.MathUtils.degToRad(t.shot.bearing) : u.noCompassYaw;
+    const d = THREE.MathUtils.clamp(t.shot.dist, 1.5, VIEW_M);
     tmpV.set(-Math.sin(yaw) * d, 0, -Math.cos(yaw) * d);
     const k = u.placed ? 1 - Math.exp(-dt * 4) : 1;
     u.placed = true;
@@ -544,8 +550,10 @@ function loop(now) {
   }
   if (running) {
     const s = Math.floor((now - startTime) / 1000);
-    $('timer').textContent = gpsShot ? (canCollect() ? 'PRENDILO!' : `${Math.round(gpsShot.dist)} m`)
-      : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    const shots = gpsHunt ? liveShots() : [];
+    $('timer').textContent = !gpsHunt ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+      : shots.some(t => canCollect(t.shot)) ? 'PRENDILO!'
+      : shots.length ? `${Math.round(Math.min(...shots.map(t => t.shot.dist)))} m` : '';
   }
   updateArrow();
   renderer.render(scene, camera);
@@ -600,7 +608,7 @@ function enterGame(hint) {
 async function startHunt() {
   if (!(await openCamera($('err')))) return;
   gpsMode = false;
-  gpsShot = null;
+  gpsHunt = false;
   world.rotation.y = 0;
   spawn();
   enterGame('Gira su te stesso<br>e cerca i funghi');
@@ -613,7 +621,7 @@ function stopHunt() {
   s?.getTracks().forEach(t => t.stop());
   video.srcObject = null;
   if (gpsMode) {
-    gpsShot = null;
+    gpsHunt = false;
     radar.classList.add('on');
     renderRadar();
     return;
@@ -757,12 +765,12 @@ async function startRadar() {
     const fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, t: p.timestamp || Date.now() };
     pos = { ...smoothFix(pos, fix), rawAcc: fix.acc };
     renderRadar();
-    trackShot();
+    syncShots();
   }, (e) => {
     $('rAcc').textContent = e.code === 1 ? 'Posizione negata. Impostazioni › Safari › Posizione.' : 'GPS non disponibile: ' + e.message;
     $('rAcc').className = 'bad';
   }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
-  radarTimer = setInterval(() => { spinArrow(); trackShot(); }, 100);
+  radarTimer = setInterval(() => { spinArrow(); syncShots(); }, 100);
   renderRadar();
 }
 function leaveRadar() {
@@ -826,38 +834,51 @@ function spinArrow() {
 }
 
 async function openGpsCam() {
-  const target = currentTarget(withDist());
-  if (!target || !pos) return;
+  if (!currentTarget(withDist()) || !pos) return;
   if (!(await openCamera($('err')))) { radar.classList.add('on'); return; }
-  // bearing frozen at open: GPS jitter must not move the mushroom
-  const d = distM(pos.lat, pos.lon, target.lat, target.lon);
-  const bearing = d < 6 && compass.ok ? compass.heading + 25 : bearingDeg(pos.lat, pos.lon, target.lat, target.lon);
-  gpsShot = { stop: target, bearing, dist: d, nearSince: null, unlocked: false };
   world.rotation.y = 0;
   clearTargets();
-  total = 1;
-  addTarget('red', THREE.MathUtils.degToRad(-25), THREE.MathUtils.clamp(d, 1.5, 40), -1.4, 1.8);
-  updateScore();
-  enterGame((compass.ok ? 'Il fungo è verso ' + target.name : 'Niente bussola: cercalo intorno a te')
-    + `<br>Avvicinati: si prende a ${COLLECT_M} m`);
+  gpsHunt = true;
+  running = true;
+  syncShots();
+  const n = liveShots().length;
+  enterGame((n === 1 ? '1 fungo qui intorno' : `${n} funghi qui intorno`) + `<br>Avvicinati: si prendono a ${COLLECT_M} m`);
 }
 
-// live GPS while the camera is open: distance always, bearing only while far enough to trust it
-function trackShot() {
-  if (!gpsShot || !running || !pos) return;
-  const st = gpsShot.stop;
-  const d = distM(pos.lat, pos.lon, st.lat, st.lon);
-  if (d >= BEARING_LOCK_M) gpsShot.bearing = bearingDeg(pos.lat, pos.lon, st.lat, st.lon);
-  gpsShot.dist = d;
-  // rescue: GPS stuck a few metres off, but you have been right there for a while
-  if (d <= RESCUE_M) gpsShot.nearSince ??= Date.now();
-  else gpsShot.nearSince = null;
-  if (!gpsShot.unlocked && gpsShot.nearSince && Date.now() - gpsShot.nearSince > RESCUE_MS) {
-    gpsShot.unlocked = true;
-    $('hint').innerHTML = 'Il GPS non ti vede,<br>ma sei lì: prendilo!';
-    $('hint').style.opacity = 1;
-    SFX.get();
+// the camera shows every uncollected stop within VIEW_M, nearest first, at its real distance
+function syncShots() {
+  if (!gpsHunt || !running || !pos) return;
+  for (const t of liveShots()) {
+    const st = t.shot.stop;
+    const d = distM(pos.lat, pos.lon, st.lat, st.lon);
+    // bearing only while far enough to trust it
+    if (d >= BEARING_LOCK_M) t.shot.bearing = bearingDeg(pos.lat, pos.lon, st.lat, st.lon);
+    t.shot.dist = d;
+    // rescue: GPS stuck a few metres off, but you have been right there for a while
+    if (d <= RESCUE_M) t.shot.nearSince ??= Date.now();
+    else t.shot.nearSince = null;
+    if (!t.shot.unlocked && t.shot.nearSince && Date.now() - t.shot.nearSince > RESCUE_MS) {
+      t.shot.unlocked = true;
+      $('hint').innerHTML = 'Il GPS non ti vede,<br>ma sei lì: prendilo!';
+      $('hint').style.opacity = 1;
+      SFX.get();
+    }
   }
+  // drop the ones you walked away from (with margin, so they don't flicker at the edge)
+  for (const t of liveShots().filter(t => t.shot.dist > VIEW_M + 10)) {
+    world.remove(t.obj);
+    targets.splice(targets.indexOf(t), 1);
+  }
+  const shown = new Set(liveShots().map(t => t.shot.stop.id));
+  const fresh = withDist().filter(st => !isGot(st.id) && !shown.has(st.id) && st.d <= VIEW_M).sort((a, b) => a.d - b.d);
+  for (const st of fresh.slice(0, MAX_VISIBLE - shown.size)) {
+    const bearing = st.d < BEARING_LOCK_M && compass.ok ? compass.heading + 25 : bearingDeg(pos.lat, pos.lon, st.lat, st.lon);
+    const t = addTarget('red', 0, THREE.MathUtils.clamp(st.d, 1.5, VIEW_M), -1.4, 1.8);
+    t.obj.userData.noCompassYaw = THREE.MathUtils.degToRad(-25 - 40 * (targets.length - 1));
+    t.shot = { stop: st, bearing, dist: st.d, nearSince: null, unlocked: false };
+  }
+  total = found + liveShots().length;
+  updateScore();
 }
 
 function plantHere() {
